@@ -1,68 +1,114 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
+/* GLOBAL */
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
+  font-family: "Segoe UI", sans-serif;
+  background: radial-gradient(circle at center, #050b14, #000);
+  color: #00eaff;
+}
+
+/* ROOT LAYOUT */
+.app-root {
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* HUD BAR */
+.hud-bar {
+  width: 100%;
+  padding: 20px 0;
+  text-align: center;
+  background: linear-gradient(90deg, #000, #03131f, #000);
+  border-bottom: 1px solid #00eaff55;
+  box-shadow: 0 0 20px #00eaff33;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
+.hud-title {
+  font-size: 38px;
+  letter-spacing: 6px;
+  margin: 0;
+  text-shadow: 0 0 12px #00eaff;
+}
+
+.hud-subtitle {
+  font-size: 14px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
+/* CONTROL PANEL */
+.control-panel {
+  margin-top: 30px;
+}
+
+/* UPLOAD BOX STYLE */
+input[type="file"] {
+  background: transparent;
+  border: 1px solid #00eaff;
+  padding: 12px 20px;
+  border-radius: 10px;
+  color: #00eaff;
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  box-shadow: 0 0 10px #00eaff55;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+input[type="file"]::-webkit-file-upload-button {
+  background: #00eaff;
+  color: black;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+/* HOLOGRAM STAGE */
+.holo-stage {
+  width: 90%;
+  height: 75vh;
+  margin-top: 30px;
+  border-radius: 20px;
+  background: radial-gradient(circle at center, #020b15, #000);
+  border: 1px solid #00eaff44;
+  box-shadow:
+    inset 0 0 30px #00eaff22,
+    0 0 40px #00eaff22;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* IDLE STATE */
+.idle-hint {
+  text-align: center;
+  opacity: 0.8;
+}
+
+.idle-hint p {
+  letter-spacing: 2px;
+}
+
+.pulse-dot {
+  width: 12px;
+  height: 12px;
+  background: #00eaff;
+  border-radius: 50%;
+  display: inline-block;
+  margin-top: 10px;
+  animation: pulse 1.6s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 #00eaff;
   }
-  a:hover {
-    color: #747bff;
+
+  50% {
+    box-shadow: 0 0 18px #00eaff;
   }
-  button {
-    background-color: #f9f9f9;
+
+  100% {
+    box-shadow: 0 0 0 #00eaff;
   }
 }
