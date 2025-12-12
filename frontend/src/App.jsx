@@ -1,10 +1,13 @@
 import { useState } from "react";
-import UploadBox from "./components/UploadBox";
+import ModelBrowser from "./components/ModelBrowser";
 import HoloViewer from "./components/HoloViewer";
+import CommandBox from "./components/CommandBox";
+import VoiceCommand from "./components/VoiceCommand";
 import "./index.css";
 
 export default function App() {
     const [modelURL, setModelURL] = useState(null);
+    const [command, setCommand] = useState(null);
 
     return (
         <div className="app-root">
@@ -16,16 +19,22 @@ export default function App() {
 
             {/* Control Panel */}
             <div className="control-panel">
-                <UploadBox setModelURL={setModelURL} />
+                <ModelBrowser setModelURL={setModelURL} />
+                {modelURL && (
+                    <>
+                        <CommandBox onCommand={(cmd) => setCommand({ text: cmd, id: Date.now() })} />
+                        <VoiceCommand onCommand={(cmd) => setCommand({ text: cmd, id: Date.now() })} />
+                    </>
+                )}
             </div>
 
             {/* Hologram Stage */}
             <div className="holo-stage">
                 {modelURL ? (
-                    <HoloViewer modelURL={modelURL} />
+                    <HoloViewer modelURL={modelURL} command={command} />
                 ) : (
                     <div className="idle-hint">
-                        <p>Upload an image to activate hologram</p>
+                        <p>Select a model to activate hologram</p>
                         <span className="pulse-dot"></span>
                     </div>
                 )}

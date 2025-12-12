@@ -2,18 +2,56 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
+import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader";
+import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader";
+import { TDSLoader } from "three/examples/jsm/loaders/TDSLoader";
 import startHandTracking from "./HandTracker";
 import computeGesture from "./GestureEngine";
 
-// Use the local uploaded file path as demo model (developer asked to use uploaded path)
-const LOCAL_TEST_MODEL = "/mnt/data/2.mp4"; // replace with a GLB URL for real model
-
-export default function HoloViewer({ modelURL = LOCAL_TEST_MODEL }) {
+export default function HoloViewer({ modelURL = null, command = null }) {
     const mountRef = useRef(null);
+    const smoothRef = useRef({ rotX: 0, rotY: 0, targetRotX: 0, targetRotY: 0, scale: 1, targetScale: 1, pos: new THREE.Vector3(0, 0, 0), targetPos: new THREE.Vector3(0, 0, 0) });
+
+    useEffect(() => {
+        if (!command) return;
+        const smooth = smoothRef.current;
+        const parts = command.text.toLowerCase().split(" ");
+        const action = parts[0];
+        const value = parseFloat(parts[parts.length - 1]);
+
+        switch (action) {
+            case "rotate":
+                const direction = parts[1];
+                const angle = THREE.MathUtils.degToRad(value || 90);
+                if (direction === "left") smooth.targetRotY -= angle;
+                if (direction === "right") smooth.targetRotY += angle;
+                if (direction === "up") smooth.targetRotX -= angle;
+                if (direction === "down") smooth.targetRotX += angle;
+                break;
+            case "scale":
+                smooth.targetScale = value;
+                break;
+            case "position":
+                const axis = parts[1];
+                if (axis === "x") smooth.targetPos.x = value;
+                if (axis === "y") smooth.targetPos.y = value;
+                break;
+            case "reset":
+                smooth.targetRotX = 0;
+                smooth.targetRotY = 0;
+                smooth.targetScale = 1;
+                smooth.targetPos.set(0, 0, 0);
+                break;
+        }
+    }, [command]);
 
     useEffect(() => {
         const mount = mountRef.current;
-        if (!mount) return;
+        if (!mount || !modelURL) return;
+
+        const smooth = smoothRef.current;
 
         // Three setup
         const scene = new THREE.Scene();
@@ -41,75 +79,68 @@ export default function HoloViewer({ modelURL = LOCAL_TEST_MODEL }) {
         let obj = null;
         let glowMesh = null;
 
-        // loader: accept GLB or other; if a video file is given it'll just create a plane with the video as texture
-        const loader = new GLTFLoader();
-        const isVideo = typeof modelURL === "string" && modelURL.endsWith(".mp4");
+        // loader: accept GLB or other
+        const fileExtension = modelURL.split('.').pop().toLowerCase();
+        let loader;
 
-        if (isVideo) {
-            // create a plane showing the video (useful for demo)
-            const video = document.createElement("video");
-            video.src = modelURL;
-            video.loop = true;
-            video.muted = true;
-            video.autoplay = true;
-            video.playsInline = true;
-            video.crossOrigin = "anonymous";
-            video.style.display = "none";
-            document.body.appendChild(video);
-            video.play().catch(() => { });
-
-            const tex = new THREE.VideoTexture(video);
-            tex.encoding = THREE.sRGBEncoding;
-            const mat = new THREE.MeshStandardMaterial({ map: tex, metalness: 0.15, roughness: 0.4 });
-            const geom = new THREE.PlaneGeometry(2.2, 1.2);
-            const mesh = new THREE.Mesh(geom, mat);
-            mesh.position.set(0, 0, 0);
-            obj = mesh;
-            group.add(obj);
-
-            // glow mesh (slightly larger, emissive)
-            const glowMat = new THREE.MeshBasicMaterial({ color: 0x00eaff, transparent: true, opacity: 0.06 });
-            glowMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.4), glowMat);
-            glowMesh.position.copy(mesh.position);
-            glowMesh.renderOrder = 0;
-            group.add(glowMesh);
+        if (fileExtension === 'gltf' || fileExtension === 'glb') {
+            loader = new GLTFLoader();
+        } else if (fileExtension === 'obj') {
+            loader = new OBJLoader();
+        } else if (fileExtension === 'fbx') {
+            loader = new FBXLoader();
+        } else if (fileExtension === 'stl') {
+            loader = new STLLoader();
+        } else if (fileExtension === 'ply') {
+            loader = new PLYLoader();
+        } else if (fileExtension === '3ds') {
+            loader = new TDSLoader();
         } else {
-            // try to load gltf
-            loader.load(
-                modelURL,
-                (gltf) => {
-                    obj = gltf.scene;
-                    // auto-fit model: compute bounding box and scale to nice hologram size
-                    const box = new THREE.Box3().setFromObject(obj);
-                    const size = new THREE.Vector3();
-                    box.getSize(size);
-                    const maxDim = Math.max(size.x, size.y, size.z);
-                    const desired = 1.4; // target size
-                    const s = desired / (maxDim || 1);
-                    obj.scale.setScalar(s);
-                    obj.position.set(0, -0.35, 0);
-                    group.add(obj);
-
-                    // glow copy: clone mesh but use emissive-like material for subtle rim
-                    glowMesh = obj.clone();
-                    glowMesh.traverse((n) => {
-                        if (n.isMesh) {
-                            n.material = n.material.clone();
-                            n.material.emissive = new THREE.Color(0x00d6ff);
-                            n.material.emissiveIntensity = 0.02;
-                            n.material.transparent = true;
-                        }
-                    });
-                    glowMesh.scale.multiplyScalar(1.03);
-                    group.add(glowMesh);
-                },
-                undefined,
-                (err) => console.error("GLTF load error", err)
-            );
+            console.error("Unsupported file format:", fileExtension);
+            return;
         }
+        
+        // try to load gltf
+        loader.load(
+            modelURL,
+            (loadedObject) => {
+                if (fileExtension === 'gltf' || fileExtension === 'glb') {
+                    obj = loadedObject.scene;
+                } else if (fileExtension === 'stl' || fileExtension === 'ply') {
+                    const material = new THREE.MeshNormalMaterial();
+                    obj = new THREE.Mesh(loadedObject, material);
+                } else {
+                    obj = loadedObject;
+                }
 
-        // Gesture control state
-        let smooth = { rotX: 0, rotY: 0, targetRotX: 0, targetRotY: 0, scale: 1, targetScale: 1, pos: new THREE.Vector3(0, 0, 0), targetPos: new THREE.Vector3(0, 0, 0) };
+                // auto-fit model: compute bounding box and scale to nice hologram size
+                const box = new THREE.Box3().setFromObject(obj);
+                const size = new THREE.Vector3();
+                box.getSize(size);
+                const maxDim = Math.max(size.x, size.y, size.z);
+                const desired = 1.4; // target size
+                const s = desired / (maxDim || 1);
+                obj.scale.setScalar(s);
+                obj.position.set(0, -0.35, 0);
+                group.add(obj);
+
+                // glow copy: clone mesh but use emissive-like material for subtle rim
+                glowMesh = obj.clone();
+                glowMesh.traverse((n) => {
+                    if (n.isMesh) {
+                        n.material = n.material.clone();
+                        n.material.emissive = new THREE.Color(0x00d6ff);
+                        n.material.emissiveIntensity = 0.02;
+                        n.material.transparent = true;
+                    }
+                });
+                glowMesh.scale.multiplyScalar(1.03);
+                group.add(glowMesh);
+            },
+            undefined,
+            (err) => console.error("Model load error", err)
+        );
+
         let prev = {}; // prev state for gesture engine
 
         // helper damping function (frame-rate independent)
@@ -127,7 +158,7 @@ export default function HoloViewer({ modelURL = LOCAL_TEST_MODEL }) {
             smooth.targetRotX = gesture.rotTarget.x;
             smooth.targetRotY = gesture.rotTarget.y;
             smooth.targetScale = gesture.scaleTarget;
-            smooth.targetPos = new THREE.Vector3(gesture.posTarget.x, gesture.posTarget.y, gesture.posTarget.z || 0);
+            smooth.targetPos = new THREE.Vector3(gesture.posTarget.x, gesture.posPos.y, gesture.posTarget.z || 0);
 
             // reset requested -> gently animate to default transform
             if (gesture.reset) {
@@ -161,20 +192,20 @@ export default function HoloViewer({ modelURL = LOCAL_TEST_MODEL }) {
             last = now;
 
             // interpolate rotation & scale & pos
-            smooth.rotX = damp(smooth.rotX || 0, smooth.targetRotX || 0, 8.0, dt);
-            smooth.rotY = damp(smooth.rotY || 0, smooth.targetRotY || 0, 8.0, dt);
-            smooth.scale = damp(smooth.scale || 1, smooth.targetScale || 1, 6.0, dt);
+            smooth.rotX = damp(smooth.rotX || 0, smooth.targetRotX || 0, 5.0, dt);
+            smooth.rotY = damp(smooth.rotY || 0, smooth.targetRotY || 0, 5.0, dt);
+            smooth.scale = damp(smooth.scale || 1, smooth.targetScale || 1, 4.0, dt);
             smooth.pos = new THREE.Vector3(
-                damp(smooth.pos.x || 0, (smooth.targetPos && smooth.targetPos.x) || 0, 6.0, dt),
-                damp(smooth.pos.y || 0, (smooth.targetPos && smooth.targetPos.y) || 0, 6.0, dt),
+                damp(smooth.pos.x || 0, (smooth.targetPos && smooth.targetPos.x) || 0, 4.0, dt),
+                damp(smooth.pos.y || 0, (smooth.targetPos && smooth.targetPos.y) || 0, 4.0, dt),
                 0
             );
 
             if (obj) {
                 obj.rotation.x = smooth.rotX;
                 obj.rotation.y = smooth.rotY;
-                obj.scale.lerp(new THREE.Vector3(smooth.scale, smooth.scale, smooth.scale), 0.12);
-                obj.position.lerp(smooth.pos, 0.12);
+                obj.scale.lerp(new THREE.Vector3(smooth.scale, smooth.scale, smooth.scale), 0.08);
+                obj.position.lerp(smooth.pos, 0.08);
             }
             if (glowMesh && obj) {
                 glowMesh.position.copy(obj.position);
