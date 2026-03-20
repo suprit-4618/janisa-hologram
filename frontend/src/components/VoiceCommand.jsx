@@ -94,13 +94,15 @@ export default function VoiceCommand({ onCommand }) {
                 onClick={toggleListening}
                 disabled={status === "processing"}
                 style={{
-                    background: status === "listening" ? "#ff4136" : "#00eaff",
+                    background: status === "listening" ? "#ff4136" : "#ffcc00",
                     border: "none",
                     color: "#000",
-                    padding: "7px 15px",
-                    borderRadius: "4px",
+                    padding: "7px 20px",
+                    borderRadius: "8px",
                     cursor: status === "processing" ? "default" : "pointer",
                     opacity: status === "processing" ? 0.7 : 1,
+                    fontWeight: "700",
+                    transition: "all 0.2s"
                 }}
             >
                 {getButtonText()}

@@ -20,23 +20,29 @@ export default function CommandBox({ onCommand }) {
                 placeholder="Enter command..."
                 style={{
                     background: "rgba(0, 0, 0, 0.5)",
-                    border: "1px solid #00eaff",
-                    color: "#00eaff",
-                    padding: "6px 10px",
-                    borderRadius: "4px",
+                    border: "1px solid #ffcc00",
+                    color: "#ffcc00",
+                    padding: "6px 14px",
+                    borderRadius: "8px",
                     marginRight: "10px",
+                    outline: "none",
+                    fontFamily: "inherit"
                 }}
             />
             <button
                 type="submit"
                 style={{
-                    background: "#00eaff",
+                    background: "#ffcc00",
                     border: "none",
                     color: "#000",
-                    padding: "7px 15px",
-                    borderRadius: "4px",
+                    padding: "7px 20px",
+                    borderRadius: "8px",
                     cursor: "pointer",
+                    fontWeight: "700",
+                    transition: "all 0.2s"
                 }}
+                onMouseEnter={e => e.currentTarget.style.background = '#ffaa00'}
+                onMouseLeave={e => e.currentTarget.style.background = '#ffcc00'}
             >
                 Execute
             </button>

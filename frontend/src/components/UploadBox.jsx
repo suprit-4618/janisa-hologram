@@ -16,12 +16,13 @@ export default function UploadBox({ setModelURL }) {
                 htmlFor="file-upload"
                 className="custom-file-upload"
                 style={{
-                    border: "1px solid #00eaff",
-                    color: "#00eaff",
+                    border: "1px solid #ffcc00",
+                    color: "#ffcc00",
                     display: "inline-block",
-                    padding: "6px 12px",
+                    padding: "6px 16px",
                     cursor: "pointer",
-                    borderRadius: "4px",
+                    borderRadius: "8px",
+                    fontWeight: "600"
                 }}
             >
                 Upload 3D Model

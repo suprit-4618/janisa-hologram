@@ -36,7 +36,7 @@ export default async function startHandTracking(onFrame) {
         bottom: "12px",
         width: "200px",
         height: "150px",
-        border: "2px solid #00eaff",
+        border: "2px solid #ffcc00",
         borderRadius: "8px",
         zIndex: 9999,
         transform: "translateZ(0)",

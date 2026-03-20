@@ -22,15 +22,18 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    file_extension = os.path.splitext(file.filename)[1]
+    name, ext = os.path.splitext(file.filename)
+    # Clean filename and add unique ID
+    safe_name = "".join([c for c in name if c.isalnum() or c in (" ", "-", "_")]).strip()
+    unique_filename = f"{safe_name}_{uuid.uuid4().hex[:6]}{ext}"
     
-    if file_extension in [".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".3ds"]:
-        file_path = os.path.join(MODELS_DIR, file.filename)
+    if ext.lower() in [".glb", ".gltf", ".obj", ".fbx", ".stl", ".ply", ".3ds"]:
+        file_path = os.path.join(MODELS_DIR, unique_filename)
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        return {"model_name": file.filename}
+        return {"model_name": unique_filename}
     else:
-        return {"error": "File type not supported. Please upload .glb, .gltf, .obj, .fbx, .stl, .ply, or .3ds files."}
+        return {"error": f"File type {ext} not supported. Please upload .glb, .gltf, .obj, .fbx, .stl, .ply, or .3ds files."}
 
 
 @app.get("/models")
@@ -41,5 +44,14 @@ async def list_models():
             models.append(filename)
     return {"models": models}
 
+@app.delete("/delete/{filename}")
+async def delete_model(filename: str):
+    file_path = os.path.join(MODELS_DIR, filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        return {"message": f"Model {filename} deleted successfully"}
+    else:
+        return {"error": "Model not found"}
+
 # Serve the models statically
-app.mount("/models", StaticFiles(directory=MODELS_DIR), name="models")
+app.mount("/model-files", StaticFiles(directory=MODELS_DIR), name="models")

@@ -9,51 +9,60 @@ import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader";
 import { TDSLoader } from "three/examples/jsm/loaders/TDSLoader";
 import startHandTracking from "./HandTracker";
 import computeGesture from "./GestureEngine";
+import { HoloShader } from "./HoloShader";
 
-export default function HoloViewer({ modelURL = null, command = null }) {
+export default function HoloViewer({ modelURL = null, command = null, onGesture = null }) {
     const mountRef = useRef(null);
-    const smoothRef = useRef({ rotX: 0, rotY: 0, targetRotX: 0, targetRotY: 0, scale: 1, targetScale: 1, pos: new THREE.Vector3(0, 0, 0), targetPos: new THREE.Vector3(0, 0, 0) });
+    const smoothRef = useRef({ 
+        rotX: 0, rotY: 0, targetRotX: 0, targetRotY: 0, 
+        scale: 1, targetScale: 1, 
+        pos: new THREE.Vector3(0, 0, 0), targetPos: new THREE.Vector3(0, 0, 0),
+        // Add separate voice offsets to avoid being overwritten by hand tracker
+        vRotX: 0, vRotY: 0, vScale: 1, vPos: new THREE.Vector3(0, 0, 0)
+    });
 
+    // 1. Handle Voice Commands (Updates vOffsets)
     useEffect(() => {
         if (!command) return;
         const smooth = smoothRef.current;
         const parts = command.text.toLowerCase().split(" ");
         const action = parts[0];
-        const value = parseFloat(parts[parts.length - 1]);
+        const value = parseFloat(parts[parts.length - 1]) || 0;
 
         switch (action) {
             case "rotate":
                 const direction = parts[1];
                 const angle = THREE.MathUtils.degToRad(value || 90);
-                if (direction === "left") smooth.targetRotY -= angle;
-                if (direction === "right") smooth.targetRotY += angle;
-                if (direction === "up") smooth.targetRotX -= angle;
-                if (direction === "down") smooth.targetRotX += angle;
+                if (direction === "left") smooth.vRotY -= angle;
+                if (direction === "right") smooth.vRotY += angle;
+                if (direction === "up") smooth.vRotX -= angle;
+                if (direction === "down") smooth.vRotX += angle;
                 break;
             case "scale":
-                smooth.targetScale = value;
+                smooth.vScale = value || 1;
                 break;
+            case "move":
             case "position":
                 const axis = parts[1];
-                if (axis === "x") smooth.targetPos.x = value;
-                if (axis === "y") smooth.targetPos.y = value;
+                const offset = value || 0.5;
+                if (axis === "x" || parts.includes("left")) smooth.vPos.x -= offset;
+                if (axis === "x" || parts.includes("right")) smooth.vPos.x += offset;
+                if (axis === "y") smooth.vPos.y += offset;
                 break;
             case "reset":
-                smooth.targetRotX = 0;
-                smooth.targetRotY = 0;
-                smooth.targetScale = 1;
-                smooth.targetPos.set(0, 0, 0);
+                smooth.vRotX = smooth.vRotY = 0;
+                smooth.vScale = 1;
+                smooth.vPos.set(0, 0, 0);
                 break;
         }
     }, [command]);
 
+    // 2. Main Three.js Scene
     useEffect(() => {
         const mount = mountRef.current;
         if (!mount || !modelURL) return;
 
         const smooth = smoothRef.current;
-
-        // Three setup
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x000000);
 
@@ -62,128 +71,125 @@ export default function HoloViewer({ modelURL = null, command = null }) {
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(mount.clientWidth, mount.clientHeight);
-        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.setPixelRatio(window.devicePixelRatio);
         mount.appendChild(renderer.domElement);
 
-        // Lighting + hologram rim light (glow)
-        const hemi = new THREE.HemisphereLight(0x88dfff, 0x0a0a12, 1.6);
+        const hemi = new THREE.HemisphereLight(0xffcc00, 0x0a0a12, 1.6);
         scene.add(hemi);
         const dir = new THREE.DirectionalLight(0xffffff, 1.8);
         dir.position.set(5, 8, 6);
         scene.add(dir);
 
-        // rim/emissive shader basic: we emulate glow by adding an emissive copy
         const group = new THREE.Group();
         scene.add(group);
 
         let obj = null;
-        let glowMesh = null;
+        let scanPlane = null;
+        let shaderMaterial = null;
 
-        // loader: accept GLB or other
+        // Bounding Box / Scan Plane setup
+        const planeGeom = new THREE.CylinderGeometry(1.2, 1.2, 0.02, 32, 1, true);
+        const planeMat = new THREE.MeshBasicMaterial({
+            color: 0xff8800,
+            transparent: true,
+            opacity: 0.2,
+            side: THREE.DoubleSide,
+            blending: THREE.NormalBlending
+        });
+        scanPlane = new THREE.Mesh(planeGeom, planeMat);
+        group.add(scanPlane);
+
+        // Loaders
         const fileExtension = modelURL.split('.').pop().toLowerCase();
         let loader;
-
-        if (fileExtension === 'gltf' || fileExtension === 'glb') {
-            loader = new GLTFLoader();
-        } else if (fileExtension === 'obj') {
-            loader = new OBJLoader();
-        } else if (fileExtension === 'fbx') {
-            loader = new FBXLoader();
-        } else if (fileExtension === 'stl') {
-            loader = new STLLoader();
-        } else if (fileExtension === 'ply') {
-            loader = new PLYLoader();
-        } else if (fileExtension === '3ds') {
-            loader = new TDSLoader();
-        } else {
-            console.error("Unsupported file format:", fileExtension);
-            return;
+        if (fileExtension === 'gltf' || fileExtension === 'glb') loader = new GLTFLoader();
+        else if (fileExtension === 'obj') loader = new OBJLoader();
+        else if (fileExtension === 'fbx') loader = new FBXLoader();
+        else if (fileExtension === 'stl') loader = new STLLoader();
+        else if (fileExtension === 'ply') loader = new PLYLoader();
+        else if (fileExtension === '3ds') loader = new TDSLoader();
+        else {
+            loader = new GLTFLoader(); // fallback
         }
-        
-        // try to load gltf
-        loader.load(
-            modelURL,
-            (loadedObject) => {
-                if (fileExtension === 'gltf' || fileExtension === 'glb') {
-                    obj = loadedObject.scene;
-                } else if (fileExtension === 'stl' || fileExtension === 'ply') {
-                    const material = new THREE.MeshNormalMaterial();
-                    obj = new THREE.Mesh(loadedObject, material);
-                } else {
-                    obj = loadedObject;
-                }
 
-                // auto-fit model: compute bounding box and scale to nice hologram size
+        const holoMaterials = [];
+
+        if (loader) {
+            loader.load(modelURL, (loaded) => {
+                obj = (fileExtension === 'gltf' || fileExtension === 'glb') ? loaded.scene : loaded;
+
+                // Center and scale
                 const box = new THREE.Box3().setFromObject(obj);
+                const center = new THREE.Vector3();
+                box.getCenter(center);
+                obj.position.sub(center);
+                
                 const size = new THREE.Vector3();
                 box.getSize(size);
                 const maxDim = Math.max(size.x, size.y, size.z);
-                const desired = 1.4; // target size
-                const s = desired / (maxDim || 1);
+                const s = 1.4 / (maxDim || 1);
                 obj.scale.setScalar(s);
-                obj.position.set(0, -0.35, 0);
-                group.add(obj);
+                obj.position.y -= 0.2;
 
-                // glow copy: clone mesh but use emissive-like material for subtle rim
-                glowMesh = obj.clone();
-                glowMesh.traverse((n) => {
+                obj.traverse((n) => {
                     if (n.isMesh) {
-                        n.material = n.material.clone();
-                        n.material.emissive = new THREE.Color(0x00d6ff);
-                        n.material.emissiveIntensity = 0.02;
-                        n.material.transparent = true;
+                        const originalMap = n.material.map || n.material.emissiveMap;
+                        const mat = new THREE.ShaderMaterial({
+                            uniforms: THREE.UniformsUtils.clone(HoloShader.uniforms),
+                            vertexShader: HoloShader.vertexShader,
+                            fragmentShader: HoloShader.fragmentShader,
+                            transparent: true,
+                            side: THREE.DoubleSide,
+                            blending: THREE.NormalBlending,
+                            depthWrite: true
+                        });
+                        
+                        if (originalMap) {
+                            mat.uniforms.uMap.value = originalMap;
+                            mat.uniforms.uUseTexture.value = 1.0;
+                        }
+                        
+                        n.material = mat;
+                        holoMaterials.push(mat);
                     }
                 });
-                glowMesh.scale.multiplyScalar(1.03);
-                group.add(glowMesh);
-            },
-            undefined,
-            (err) => console.error("Model load error", err)
-        );
-
-        let prev = {}; // prev state for gesture engine
-
-        // helper damping function (frame-rate independent)
-        function damp(current, target, lambda, dt) {
-            return current + (target - current) * (1 - Math.exp(-lambda * dt));
+                group.add(obj);
+            }, undefined, (e) => console.error("Load error:", e));
         }
 
-        // start tracker
-        startHandTracking((frame) => {
-            // compute gestures based on frame and previous state
-            const gesture = computeGesture(frame, prev || {});
-            prev = gesture; // store last gesture as prev for next call
+        // Damping
+        function damp(c, t, l, d) { return c + (t - c) * (1 - Math.exp(-l * d)); }
 
-            // write targets
+        // Start Gestures
+        let prev = {};
+        startHandTracking((frame) => {
+            const gesture = computeGesture(frame, prev);
+            prev = gesture;
             smooth.targetRotX = gesture.rotTarget.x;
             smooth.targetRotY = gesture.rotTarget.y;
             smooth.targetScale = gesture.scaleTarget;
-            smooth.targetPos = new THREE.Vector3(gesture.posTarget.x, gesture.posPos.y, gesture.posTarget.z || 0);
+            smooth.targetPos.set(gesture.posTarget.x, gesture.posTarget.y, 0);
 
-            // reset requested -> gently animate to default transform
             if (gesture.reset) {
-                smooth.targetRotX = 0;
-                smooth.targetRotY = 0;
+                smooth.targetRotX = smooth.targetRotY = 0;
                 smooth.targetScale = 1;
-                smooth.targetPos.set(0, 0, 0);
+                smooth.targetPos.set(0,0,0);
             }
 
-            // glow intensity used to modulate glowMesh opacity / emissive
-            const glow = gesture.glow || 0;
-            if (glowMesh) {
-                // clamp and smooth
-                const g = Math.min(Math.max(glow, 0), 1);
-                // increase emissive intensity slightly
-                glowMesh.traverse((n) => {
-                    if (n.isMesh && n.material) {
-                        if (n.material.emissive) n.material.emissiveIntensity = 0.02 + g * 0.25;
-                        if (n.material.opacity !== undefined) n.material.opacity = 0.06 + g * 0.25;
-                    }
-                });
+            const g = Math.min(Math.max(gesture.glow || 0, 0), 1);
+            holoMaterials.forEach(m => {
+                m.uniforms.uGlowIntensity.value = 0.4 + g * 0.8;
+                m.uniforms.uOpacity.value = 0.6 + g * 0.4;
+            });
+
+            if (onGesture) {
+                const hands = frame.hands || [];
+                const firstHand = hands[0] || { wrist: { x: 0.5, y: 0.5 } };
+                onGesture(gesture.gestureName, firstHand.wrist, hands.length > 0);
             }
         });
 
-        // animation loop
+        // Animation loop
         let last = performance.now();
         function animate() {
             requestAnimationFrame(animate);
@@ -191,37 +197,35 @@ export default function HoloViewer({ modelURL = null, command = null }) {
             const dt = Math.min((now - last) / 1000, 0.05);
             last = now;
 
-            // interpolate rotation & scale & pos
-            smooth.rotX = damp(smooth.rotX || 0, smooth.targetRotX || 0, 5.0, dt);
-            smooth.rotY = damp(smooth.rotY || 0, smooth.targetRotY || 0, 5.0, dt);
-            smooth.scale = damp(smooth.scale || 1, smooth.targetScale || 1, 4.0, dt);
-            smooth.pos = new THREE.Vector3(
-                damp(smooth.pos.x || 0, (smooth.targetPos && smooth.targetPos.x) || 0, 4.0, dt),
-                damp(smooth.pos.y || 0, (smooth.targetPos && smooth.targetPos.y) || 0, 4.0, dt),
-                0
-            );
+            smooth.rotX = damp(smooth.rotX || 0, smooth.targetRotX || 0, 5, dt);
+            smooth.rotY = damp(smooth.rotY || 0, smooth.targetRotY || 0, 5, dt);
+            smooth.scale = damp(smooth.scale || 1, smooth.targetScale || 1, 4, dt);
+            smooth.pos.x = damp(smooth.pos.x, smooth.targetPos.x, 4, dt);
+            smooth.pos.y = damp(smooth.pos.y, smooth.targetPos.y, 4, dt);
 
             if (obj) {
-                obj.rotation.x = smooth.rotX;
-                obj.rotation.y = smooth.rotY;
-                obj.scale.lerp(new THREE.Vector3(smooth.scale, smooth.scale, smooth.scale), 0.08);
-                obj.position.lerp(smooth.pos, 0.08);
-            }
-            if (glowMesh && obj) {
-                glowMesh.position.copy(obj.position);
-                glowMesh.rotation.copy(obj.rotation);
-                glowMesh.scale.copy(obj.scale).multiplyScalar(1.03);
+                // COMBINE: Hand tracking rotation + Voice command rotation
+                obj.rotation.x = smooth.rotX + smooth.vRotX;
+                obj.rotation.y = smooth.rotY + smooth.vRotY;
+                obj.scale.setScalar(smooth.scale * smooth.vScale);
+                obj.position.x = smooth.pos.x + smooth.vPos.x;
+                obj.position.y = (smooth.pos.y + smooth.vPos.y) - 0.2;
+
+                holoMaterials.forEach(m => {
+                    m.uniforms.uTime.value = now / 1000;
+                });
+                if (scanPlane) {
+                    scanPlane.position.y = Math.sin(now / 800) * 0.8;
+                    scanPlane.material.opacity = 0.1 + Math.cos(now / 800) * 0.1;
+                }
             }
             renderer.render(scene, camera);
         }
-
         animate();
 
-        // cleanup
         return () => {
-            if (mount && renderer && renderer.domElement) {
-                mount.removeChild(renderer.domElement);
-            }
+            if (mount && renderer.domElement) mount.removeChild(renderer.domElement);
+            renderer.dispose();
         };
     }, [modelURL]);
 

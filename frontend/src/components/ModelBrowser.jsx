@@ -14,7 +14,7 @@ export default function ModelBrowser({ setModelURL }) {
                 if (data.models.length > 0 && !selectedModel) {
                     const firstModel = data.models[0];
                     setSelectedModel(firstModel);
-                    setModelURL(`${API_URL}/models/${firstModel}`);
+                    setModelURL(`${API_URL}/model-files/${firstModel}`);
                 }
             })
             .catch(err => console.error("Failed to fetch models:", err));
@@ -26,18 +26,35 @@ export default function ModelBrowser({ setModelURL }) {
 
     function handleModelSelect(modelName) {
         setSelectedModel(modelName);
-        setModelURL(`${API_URL}/models/${modelName}`);
+        setModelURL(`${API_URL}/model-files/${modelName}`);
     }
 
-    function handleUpload(e) {
-        const file = e.target.files[0];
-        if (!file) return;
+    function handleDelete(e, modelName) {
+        e.stopPropagation();
+        if (!window.confirm(`Delete ${modelName}?`)) return;
+        
+        fetch(`${API_URL}/delete/${modelName}`, { method: "DELETE" })
+            .then(() => {
+                fetchModels();
+                if (selectedModel === modelName) {
+                    setSelectedModel(null);
+                    setModelURL(null);
+                }
+            })
+            .catch(err => console.error("Failed to delete model:", err));
+    }
 
+    const [uploading, setUploading] = useState(false);
+    const [dragActive, setDragActive] = useState(false);
+
+    function triggerUpload(file) {
+        if (!file) return;
         if (file.name.toLowerCase().endsWith(".blend")) {
-            alert("'.blend' files are not supported. Please export your model to a web-friendly format like .gltf or .glb from Blender.");
+            alert("'.blend' files are not supported. Please export to .glb/.gltf.");
             return;
         }
 
+        setUploading(true);
         const formData = new FormData();
         formData.append("file", file);
 
@@ -47,60 +64,91 @@ export default function ModelBrowser({ setModelURL }) {
         })
         .then(res => res.json())
         .then(data => {
+            setUploading(false);
             if (data.model_name) {
                 fetchModels();
-                setSelectedModel(data.model_name);
-                setModelURL(`${API_URL}/models/${data.model_name}`);
-            } else if (data.error) {
-                console.error("Upload error:", data.error);
-                alert("Upload failed: " + data.error);
+                handleModelSelect(data.model_name);
+            } else {
+                alert("Upload failed: " + (data.error || "Unknown error"));
             }
         })
-        .catch(err => console.error("Upload failed:", err));
+        .catch(err => {
+            setUploading(false);
+            console.error(err);
+        });
     }
 
+    const handleDrag = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === "dragenter" || e.type === "dragover") setDragActive(true);
+        else if (e.type === "dragleave") setDragActive(false);
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            triggerUpload(e.dataTransfer.files[0]);
+        }
+    };
+
     return (
-        <div style={{ marginTop: "30px", textAlign: "center", color: "#00eaff" }}>
-            <div>
-                <label
-                    htmlFor="file-upload"
-                    className="custom-file-upload"
-                    style={{
-                        border: "1px solid #00eaff",
-                        color: "#00eaff",
-                        display: "inline-block",
-                        padding: "6px 12px",
-                        cursor: "pointer",
-                        borderRadius: "4px",
-                        marginBottom: "15px"
-                    }}
-                >
-                    Upload Model
-                </label>
+        <div style={{ marginTop: "20px", textAlign: "center", color: "#ffcc00", fontFamily: "'Inter', sans-serif" }}>
+            <div 
+                onDragEnter={handleDrag}
+                onDragLeave={handleDrag}
+                onDragOver={handleDrag}
+                onDrop={handleDrop}
+                style={{
+                    border: dragActive ? "2px dashed #ffcc00" : "1px solid rgba(255, 204, 0, 0.3)",
+                    background: dragActive ? "rgba(255, 136, 0, 0.1)" : "rgba(0, 0, 0, 0.2)",
+                    padding: "30px",
+                    borderRadius: "12px",
+                    cursor: "pointer",
+                    transition: "all 0.3s ease",
+                    position: "relative",
+                    marginBottom: "20px"
+                }}
+            >
                 <input
                     id="file-upload"
                     type="file"
-                    onChange={handleUpload}
+                    onChange={(e) => triggerUpload(e.target.files[0])}
                     style={{ display: "none" }}
                     accept=".glb, .gltf, .obj, .fbx, .stl, .ply, .3ds"
                 />
+                <label htmlFor="file-upload" style={{ cursor: "pointer" }}>
+                    <div style={{ fontSize: "1.5em", marginBottom: "10px" }}>{uploading ? "⌛" : "📤"}</div>
+                    <div style={{ fontWeight: "600", letterSpacing: "1px" }}>
+                        {uploading ? "UPLOADING SIGNAL..." : "UPLOAD CUSTOM MODEL"}
+                    </div>
+                    <div style={{ fontSize: "0.8em", opacity: 0.6, marginTop: "5px" }}>
+                        Drag & Drop or click to browse
+                    </div>
+                </label>
             </div>
-            <div style={{ fontSize: "0.8em", color: "#aaa", marginTop: "-10px", marginBottom: "15px" }}>
-                Note: .blend files are not supported. Please export to .gltf, .glb, .obj, etc. from Blender.
+
+            <div style={{ fontSize: "0.7em", color: "#aaa", marginBottom: "20px", textTransform: "uppercase", letterSpacing: "1px" }}>
+                Accepted: GLB, GLTF, OBJ, FBX, STL, PLY, 3DS
             </div>
             
-            <h3>Available Models</h3>
+            <h3 style={{ fontSize: "0.9em", letterSpacing: "2px", borderBottom: "1px solid #3a1f0e", paddingBottom: "10px" }}>
+                AVAILABLE MATRICES
+            </h3>
             {models.length === 0 ? (
-                <p>No models found. Try uploading one.</p>
+                <p style={{ opacity: 0.5 }}>Awaiting new data streams...</p>
             ) : (
                 <ul style={{
                     listStyle: "none",
                     padding: 0,
                     margin: "15px 0",
-                    maxHeight: "150px",
+                    maxHeight: "180px",
                     overflowY: "auto",
-                    background: "rgba(0, 0, 0, 0.2)",
-                    borderRadius: "4px",
+                    background: "rgba(0, 0, 0, 0.3)",
+                    borderRadius: "8px",
+                    scrollbarWidth: "none"
                 }}>
                     {models.map((model) => (
                         <li
@@ -108,17 +156,39 @@ export default function ModelBrowser({ setModelURL }) {
                             onClick={() => handleModelSelect(model)}
                             style={{
                                 cursor: "pointer",
-                                padding: "8px 12px",
-                                borderBottom: "1px solid #0e3a4a",
-                                transition: "background 0.2s ease",
-                                background: selectedModel === model ? "#00eaff" : "transparent",
-                                color: selectedModel === model ? "#000" : "#00eaff",
+                                padding: "10px 15px",
+                                borderBottom: "1px solid rgba(58, 31, 14, 0.5)",
+                                transition: "all 0.2s ease",
+                                background: selectedModel === model ? "rgba(255, 136, 0, 0.2)" : "transparent",
+                                color: selectedModel === model ? "#fff" : "rgba(255, 204, 0, 0.7)",
+                                fontWeight: selectedModel === model ? "700" : "400",
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center"
                             }}
-                            onMouseEnter={e => { if (selectedModel !== model) e.currentTarget.style.background = 'rgba(0, 234, 255, 0.1)'; }}
-                            onMouseLeave={e => { if (selectedModel !== model) e.currentTarget.style.background = 'transparent'; }}
                         >
-                            {model}
-                        </li>
+                            <span>{model}</span>
+                                <span style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                    {selectedModel === model && <span style={{ fontSize: "0.7em", color: "#fff", border: "1px solid #fff", padding: "2px 5px", borderRadius: "4px" }}>ACTIVE</span>}
+                                    <button 
+                                        onClick={(e) => handleDelete(e, model)}
+                                        style={{
+                                            background: "rgba(255, 0, 0, 0.2)",
+                                            border: "1px solid rgba(255, 0, 0, 0.4)",
+                                            color: "#ff4444",
+                                            borderRadius: "4px",
+                                            padding: "2px 8px",
+                                            fontSize: "0.8em",
+                                            cursor: "pointer",
+                                            transition: "all 0.2s"
+                                        }}
+                                        onMouseOver={(e) => e.target.style.background = "rgba(255, 0, 0, 0.4)"}
+                                        onMouseOut={(e) => e.target.style.background = "rgba(255, 0, 0, 0.2)"}
+                                    >
+                                        DELETE
+                                    </button>
+                                </span>
+                            </li>
                     ))}
                 </ul>
             )}

@@ -2,18 +2,18 @@
 // Converts HandTracker frames into high-level controls for HoloViewer.
 
 const GESTURE_CONFIG = {
-    ROTATION_SENSITIVITY_X: 2.0,
-    ROTATION_SENSITIVITY_Y: 2.8,
-    ROTATION_SENSITIVITY_MULTI_X: 1.6,
-    ROTATION_SENSITIVITY_MULTI_Y: 2.4,
-    ROTATION_MIN_X: -1.2,
-    ROTATION_MAX_X: 1.2,
-    ROTATION_MIN_Y: -1.8,
-    ROTATION_MAX_Y: 1.8,
+    ROTATION_SENSITIVITY_X: 4.5,
+    ROTATION_SENSITIVITY_Y: 5.5,
+    ROTATION_SENSITIVITY_MULTI_X: 3.2,
+    ROTATION_SENSITIVITY_MULTI_Y: 4.8,
+    ROTATION_MIN_X: -2.0,
+    ROTATION_MAX_X: 2.0,
+    ROTATION_MIN_Y: -2.8,
+    ROTATION_MAX_Y: 2.8,
     
-    ZOOM_SENSITIVITY: 1.8,
-    ZOOM_MIN: 0.45,
-    ZOOM_MAX: 3.0,
+    ZOOM_SENSITIVITY: 3.5,
+    ZOOM_MIN: 0.2,
+    ZOOM_MAX: 5.0,
     
     MOVE_SENSITIVITY_X: -0.28,
     MOVE_SENSITIVITY_Y: 0.28,
@@ -42,6 +42,7 @@ export default function computeGesture(frame, prev = {}) {
         posTarget: state.pos || { x: 0, y: 0, z: 0 },
         reset: false,
         glow: 0,
+        gestureName: "IDLE",
         meta: {},
     };
 
@@ -60,8 +61,9 @@ export default function computeGesture(frame, prev = {}) {
         const dx = h0.wrist.x - 0.5;
         const dy = h0.wrist.y - 0.5;
 
-        out.rotTarget.y = clamp(-dx * GESTURE_CONFIG.ROTATION_SENSITIVITY_Y, GESTURE_CONFIG.ROTATION_MIN_Y, GESTURE_CONFIG.ROTATION_MAX_Y); // ✅ FIXED: mirror corrected
-        out.rotTarget.x = clamp(dy * GESTURE_CONFIG.ROTATION_SENSITIVITY_X, GESTURE_CONFIG.ROTATION_MIN_X, GESTURE_CONFIG.ROTATION_MAX_X);  // ✅ FIXED: up = up
+        out.rotTarget.y = clamp(-dx * GESTURE_CONFIG.ROTATION_SENSITIVITY_Y, GESTURE_CONFIG.ROTATION_MIN_Y, GESTURE_CONFIG.ROTATION_MAX_Y);
+        out.rotTarget.x = clamp(dy * GESTURE_CONFIG.ROTATION_SENSITIVITY_X, GESTURE_CONFIG.ROTATION_MIN_X, GESTURE_CONFIG.ROTATION_MAX_X);
+        out.gestureName = "ORBIT";
     }
     else if (h1 && !h0) {
         const dx = h1.wrist.x - 0.5;
@@ -69,6 +71,7 @@ export default function computeGesture(frame, prev = {}) {
 
         out.rotTarget.y = clamp(-dx * GESTURE_CONFIG.ROTATION_SENSITIVITY_Y, GESTURE_CONFIG.ROTATION_MIN_Y, GESTURE_CONFIG.ROTATION_MAX_Y);
         out.rotTarget.x = clamp(dy * GESTURE_CONFIG.ROTATION_SENSITIVITY_X, GESTURE_CONFIG.ROTATION_MIN_X, GESTURE_CONFIG.ROTATION_MAX_X);
+        out.gestureName = "ORBIT";
     }
     else if (h0 && h1) {
         const mx = (h0.wrist.x + h1.wrist.x) / 2 - 0.5;
@@ -76,6 +79,7 @@ export default function computeGesture(frame, prev = {}) {
 
         out.rotTarget.y = clamp(-mx * GESTURE_CONFIG.ROTATION_SENSITIVITY_MULTI_Y, -1.6, 1.6);
         out.rotTarget.x = clamp(my * GESTURE_CONFIG.ROTATION_SENSITIVITY_MULTI_X, -1.0, 1.0);
+        out.gestureName = "DUAL_ROT";
     }
 
     // ================================
@@ -90,6 +94,7 @@ export default function computeGesture(frame, prev = {}) {
         const norm = clamp(map(pinch, 0.02, 0.18, 1.0, 0.0), 0, 1);
         const scaleTarget = clamp(0.6 + norm * GESTURE_CONFIG.ZOOM_SENSITIVITY, GESTURE_CONFIG.ZOOM_MIN, GESTURE_CONFIG.ZOOM_MAX);
         out.scaleTarget = scaleTarget;
+        out.gestureName = "ZOOM";
     }
 
     // ================================
@@ -104,6 +109,7 @@ export default function computeGesture(frame, prev = {}) {
         const mv = frame.hist.h0vel || { vx: 0, vy: 0 };
         out.posTarget.x = clamp(mv.vx * GESTURE_CONFIG.MOVE_SENSITIVITY_X, GESTURE_CONFIG.MOVE_MIN_X, GESTURE_CONFIG.MOVE_MAX_X);
         out.posTarget.y = clamp(mv.vy * GESTURE_CONFIG.MOVE_SENSITIVITY_Y, GESTURE_CONFIG.MOVE_MIN_Y, GESTURE_CONFIG.MOVE_MAX_Y);
+        out.gestureName = "MOVE";
     }
     else if (isPalmOpen(h1) && !h0) {
         const mv = frame.hist.h1vel || { vx: 0, vy: 0 };
@@ -141,6 +147,7 @@ export default function computeGesture(frame, prev = {}) {
 
     if (isLShape(h0) || isLShape(h1)) {
         out.reset = true;
+        out.gestureName = "RESET";
     }
 
     // ================================
